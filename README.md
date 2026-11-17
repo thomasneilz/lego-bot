@@ -97,4 +97,4 @@ Chaque alerte affiche une pastille et une note sur 100 :
 - 🟢 **Excellente affaire** (75 et plus), 🟡 **Bonne affaire** (62 à 74), 🟠 **Affaire correcte** (en dessous)
 - La note combine la remise (jusqu'à 72 points), l'urgence (+18 si la retraite est à moins de 60 jours ou déjà passée, +10 à moins de 120 jours) et la classe du set (+10 pour la classe A).
 
-Le **bénéfice estimé** suppose, de façon prudente, une revente à +15 % du prix public après la retraite pour la classe A (+5 % pour la classe B), moins 15 % de frais. C'est un ordre de grandeur : vérifie toujours les ventes réelles sur BrickLink avant d'acheter en quantité. Les réglages sont dans `bot.py` (`REVALO`, `FRAIS`).
+La **plus-value brute** suppose, de façon prudente, une revente à +15 % du prix public après la retraite pour la classe A (+5 % pour la classe B), moins ton prix d'achat. La ligne **net** retire en plus 15 % de frais de revente (commission eBay/Vinted/BrickLink et envoi du colis). C'est un ordre de grandeur : vérifie toujours les ventes réelles sur BrickLink avant d'acheter en quantité. Les réglages sont dans `bot.py` (`REVALO`, `FRAIS`).

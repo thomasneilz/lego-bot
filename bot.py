@@ -187,21 +187,22 @@ FRAIS = 0.15
 
 
 def quality(a):
-    """Renvoie (pastille, libellé, score, bénéfice estimé, marge %)."""
+    """Renvoie (pastille, libellé, score, plus-value brute, marge brute %, bénéfice net)."""
     classe = "A" if a.get("seuil", 30) <= 30 else "B"
-    resale_net = a["rrp"] * REVALO[classe] * (1 - FRAIS)
-    profit = resale_net - a["price"]
+    resale = a["rrp"] * REVALO[classe]
+    profit = resale - a["price"]                       # brut : revente - prix d'achat
     margin = profit / a["price"] * 100
+    net = resale * (1 - FRAIS) - a["price"]            # après commission + envoi
     # Score sur 100 : la remise compte le plus, puis l'urgence (retraite proche), puis la classe
     score = min(a["discount"], 60) * 1.2                       # jusqu'à 72 pts
     score += 18 if a["days"] <= 60 else 10 if a["days"] <= 120 else 0
     score += 10 if classe == "A" else 0
     score = round(min(score, 100))
     if score >= 75:
-        return "🟢", "Excellente affaire", score, profit, margin
+        return "🟢", "Excellente affaire", score, profit, margin, net
     if score >= 62:
-        return "🟡", "Bonne affaire", score, profit, margin
-    return "🟠", "Affaire correcte", score, profit, margin
+        return "🟡", "Bonne affaire", score, profit, margin, net
+    return "🟠", "Affaire correcte", score, profit, margin, net
 
 
 def esc(t):
@@ -211,7 +212,7 @@ def esc(t):
 def format_alert(a):
     """Renvoie (texte HTML, lien du deal)."""
     sym = "£" if a["cur"] == "GBP" else "€"
-    dot, label, score, profit, margin = quality(a)
+    dot, label, score, profit, margin, net = quality(a)
     if a["days"] >= 0:
         retire_txt = f"retraite le {a['retire']:%d/%m/%Y} (dans {a['days']} j)"
     else:
@@ -221,7 +222,8 @@ def format_alert(a):
         f"{dot} <b>{label}</b> · {score}/100",
         f"{fire}<b>-{a['discount']:.0f} %</b> · {esc(a['name'])} ({a['set']})",
         f"💰 <b>{sym}{a['price']:.2f}</b> au lieu de {sym}{a['rrp']:.2f}",
-        f"📈 Bénéfice estimé à la revente : <b>~{sym}{profit:.0f}</b> par boîte ({margin:+.0f} %)",
+        f"📈 Plus-value brute estimée : <b>~{sym}{profit:.0f}</b> par boîte ({margin:+.0f} %)",
+        f"   ↳ net après commission et envoi : ~{sym}{net:.0f}",
         f"⏳ {retire_txt}",
     ]
     meta = " · ".join(x for x in [
