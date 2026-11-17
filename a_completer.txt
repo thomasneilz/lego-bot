@@ -1,0 +1,39 @@
+# Sets intéressants sans prix public connu : ajoute-les dans manuel.csv
+10332;Medieval Town Square;Icons
+21346;Family Tree;Ideas
+21347;Red London Telephone Box;Ideas
+40220;London Bus;Creator
+40649;Up-Scaled LEGO Minifigure;Creator
+40719;Traditional Chess Set;Miscellaneous
+40805;Arcade Machine;Miscellaneous
+42180;Mars Crew Exploration Rover;Technic
+42181;VTOL Heavy Cargo Spaceship LT81;Technic
+42182;NASA Apollo Lunar Roving Vehicle;Technic
+43008;Nike Dunk;Editions
+43010;Nike Slam Dunk;Editions
+43021;Nike Dunk Trickshot;Editions
+60337;Passenger Express Train;City
+60445;F1 Truck with RB20 & AMR24 F1 Cars;City
+60469;Central Train Station;City
+60493;F1 Display Truck with Audi F1 Race Car;City
+66823;Cristiano Ronaldo - CR7 Collectors Set;Editions
+71799;NINJAGO City Markets;Ninjago
+72151;Eevee;Pokemon
+72152;Pikachu and Poke Ball;Pokemon
+72153;Venusaur, Charizard and Blastoise;Pokemon
+75381;Buildable Droideka;Star Wars
+75387;Tantive IV Boarding Diorama;Star Wars
+75636;Windmill Village Hut;One Piece
+75637;Buggy the Clown's Circus Tent;One Piece
+75639;The Going Merry Pirate Ship;One Piece
+75640;The Baratie Floating Restaurant;One Piece
+75683;Glinda & Elphaba's Dormitory;Wicked
+76421;Dobby the House-Elf;Harry Potter
+76433;Mandrake;Harry Potter
+76784;Black Dahlia Flower;Wednesday
+76786;Morticia's Cottage;Wednesday
+77051;Fly with Dodo Airlines;Animal Crossing
+77052;K.K.'s Concert at the Plaza;Animal Crossing
+77053;Stargazing with Celeste;Animal Crossing
+77056;Blathers's Museum Collection;Animal Crossing
+77058;Goldie's Cosy House;Animal Crossing

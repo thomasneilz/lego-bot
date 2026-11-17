@@ -1,0 +1,31 @@
+name: Mise à jour de la watchlist
+
+on:
+  schedule:
+    - cron: "17 6 1 * *"     # le 1er de chaque mois à 6h17
+  workflow_dispatch:
+
+permissions:
+  contents: write            # pour enregistrer la nouvelle watchlist dans le dépôt
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Rafraîchir les données et reconstruire la watchlist
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          BRICKSET_KEY: ${{ secrets.BRICKSET_KEY }}
+        run: python build_watchlist.py --online
+      - name: Enregistrer les changements
+        run: |
+          git config user.name "lego-bot"
+          git config user.email "lego-bot@users.noreply.github.com"
+          git add watchlist.csv retraites.txt prix.txt a_completer.txt
+          git diff --cached --quiet || git commit -m "Watchlist : mise à jour mensuelle"
+          git push

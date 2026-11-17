@@ -1,0 +1,3 @@
+set,nom,theme,prix_public_gbp,prix_public_eur,retraite,seuil
+# Ajoute ici tes sets à toi (ils passent devant la liste automatique). Exemple :
+# 72164,Pikachu et la cabane d'entraînement,Pokemon,,69.99,2027-12-31,30

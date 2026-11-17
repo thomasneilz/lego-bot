@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:pepper="http://www.pepper.com/rss">
+<channel>
+<title>Test</title>
+<item><title>LEGO Star Wars Kylo Ren Helmet 75415 £41.99 @ Amazon</title><link>https://example.com/1</link><guid>1</guid></item>
+<item><title>LEGO 75415 Casque de Kylo Ren</title><link>https://example.com/2</link><guid>2</guid><pepper:merchant name="Fnac" price="48,99€"/></item>
+<item><title>LEGO 75415 Kylo Ren Helmet £54.99 @ Argos</title><link>https://example.com/3</link><guid>3</guid></item>
+<item><title>LEGO Botanicals 10311 Orchid £29.99</title><link>https://example.com/4</link><guid>4</guid></item>
+<item><title>LEGO 75417 AT-ST £119.99 @ John Lewis</title><link>https://example.com/5</link><guid>5</guid></item>
+<item><title>LEGO Millennium Falcon 75192 - 499,99€ chez Auchan</title><link>https://example.com/6</link><guid>6</guid></item>
+<item><title>Samsung TV 75415 inch £41.99</title><link>https://example.com/7</link><guid>7</guid></item>
+<item><title>LEGO Ninjago 71814 Tournament Temple City £142.99</title><link>https://example.com/8</link><guid>8</guid></item>
+<item><title>LEGO Ninjago 71814 Tournament Temple City £119.99 @ Argos</title><link>https://example.com/9</link><guid>9</guid></item>
+</channel>
+</rss>
