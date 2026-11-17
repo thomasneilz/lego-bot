@@ -45,6 +45,8 @@ DEFAULT_FEEDS = [
     "https://www.hotukdeals.com/rss/hot",
     "https://www.dealabs.com/rss/new",
     "https://www.dealabs.com/rss/hot",
+    "https://www.mydealz.de/rss/new",
+    "https://www.mydealz.de/rss/hot",
 ]
 
 MIN_DISCOUNT = float(os.getenv("MIN_DISCOUNT", "30"))
@@ -257,45 +259,165 @@ def send(text, link=None):
 
 # ---------- Mémoire des annonces déjà vues ----------
 
-def load_seen():
+def load_state():
+    """seen.json : annonces déjà vues, deals déjà envoyés, santé des sources."""
+    st = {"ids": [], "deals": [], "health": {}}
     if SEEN_FILE.exists():
-        return set(json.loads(SEEN_FILE.read_text()))
-    return set()
+        data = json.loads(SEEN_FILE.read_text())
+        if isinstance(data, list):          # ancien format
+            st["ids"] = data
+        else:
+            st.update(data)
+    return st
 
 
-def save_seen(seen):
-    # On ne garde que les 2000 dernières pour que le fichier reste petit.
-    SEEN_FILE.write_text(json.dumps(sorted(seen)[-2000:]))
+def save_state(st):
+    st["ids"] = st["ids"][-3000:]
+    st["deals"] = st["deals"][-3000:]
+    SEEN_FILE.write_text(json.dumps(st))
+
+
+# ---------- Source 2 : Brickfact (prix relevés directement chez les marchands) ----------
+# Une page par pays ; on lit les N premières pages de chaque liste de promos.
+BRICKFACT = {
+    "UK": "https://brickfact.com/en-gb/lego-deals",
+    "FR": "https://brickfact.com/fr-fr/lego-offres",
+    "DE": "https://brickfact.com/de-de/lego-angebote",
+}
+BF_PAGES = int(os.getenv("BF_PAGES", "3"))
+BF_LINK_RE = re.compile(r'href="(?:https://brickfact\.com)?(/[a-z]{2}(?:-[a-z]{2})?/[a-z\-]+/[a-z0-9\-]*?-(\d{4,6}))"')
+
+
+def parse_brickfact(html_text, country):
+    """Renvoie une liste d'annonces au même format que les flux RSS.
+    Pour chaque lien vers une fiche de set, on prend le plus petit prix affiché
+    entre ce lien et le lien suivant (prix actuel < prix public)."""
+    items, links = [], list(BF_LINK_RE.finditer(html_text))
+    for i, m in enumerate(links):
+        path, num = m.group(1), m.group(2)
+        chunk = html_text[m.end(): links[i + 1].start() if i + 1 < len(links) else m.end() + 3000]
+        text = re.sub(r"<[^>]+>", " ", chunk)
+        prices = []
+        for pm in PRICE_RE.finditer(text):
+            if pm.group(1):
+                prices.append((to_float(pm.group(2)), "GBP" if pm.group(1) == "£" else "EUR"))
+            else:
+                prices.append((to_float(pm.group(3)), "GBP" if pm.group(4) == "£" else "EUR"))
+        prices = [p for p in prices if p[0] > 0]
+        if not prices:
+            continue
+        price, cur = min(prices)
+        sym = "£" if cur == "GBP" else "€"
+        items.append({
+            "id": f"bf:{country}:{num}:{price:.2f}",
+            "title": f"LEGO {num} {sym}{price:.2f} (Brickfact {country})",
+            "link": "https://brickfact.com" + path,
+            "price_attr": None,
+            "merchant": f"meilleur prix {country} via Brickfact",
+        })
+    # un set peut apparaître plusieurs fois sur la page : on garde la 1re occurrence
+    uniq = {}
+    for it in items:
+        uniq.setdefault(it["id"], it)
+    return list(uniq.values())
+
+
+def brickfact_items():
+    """Renvoie [(nom, items, erreur)] : une source par pays, suivie séparément."""
+    results = []
+    for country, base in BRICKFACT.items():
+        found, err = [], None
+        for page in range(1, BF_PAGES + 1):
+            url = base if page == 1 else f"{base}/{page}"
+            try:
+                found.extend(parse_brickfact(fetch(url).decode("utf-8", "replace"), country))
+            except Exception as e:
+                err = f"{url} : {e}"
+                break
+        if not found and not err:
+            err = "page lue mais aucun prix trouvé (format changé ?)"
+        results.append((f"Brickfact {country}", found, err if not found else None))
+    return results
+
+
+# ---------- Santé des sources ----------
+FAIL_ALERT_AFTER = 8          # 8 passages ratés d'affilée (~2 h) avant de te prévenir
+
+
+def track_health(st, name, ok, detail, dry_run):
+    h = st["health"].setdefault(name, {"fails": 0, "warned": False, "ever_ok": False})
+    if ok:
+        if h["warned"] and not dry_run:
+            send(f"✅ Source rétablie : {esc(name)}")
+        h.update(fails=0, warned=False, ever_ok=True)
+        return
+    h["fails"] += 1
+    if h["fails"] >= FAIL_ALERT_AFTER and not h["warned"]:
+        msg = (f"⚠️ <b>Source en panne</b> : {esc(name)}\n"
+               f"{h['fails']} passages ratés d'affilée. Les autres sources continuent.\n"
+               f"<i>{esc(detail)[:300]}</i>")
+        print(msg, file=sys.stderr)
+        if not dry_run:
+            send(msg)
+        h["warned"] = True
 
 
 # ---------- Programme principal ----------
 
-def run(dry_run=False, feed_files=None):
-    watchlist = load_watchlist()
-    seen = load_seen()
-    feeds = feed_files or [f.strip() for f in os.getenv("FEEDS", ",".join(DEFAULT_FEEDS)).split(",") if f.strip()]
-    sent = 0
+def collect(feed_files=None):
+    """Renvoie [(nom_source, items, erreur)]."""
+    if feed_files:
+        return [(f, parse_feed(Path(f).read_bytes()), None) for f in feed_files]
+    results = []
+    feeds = [f.strip() for f in os.getenv("FEEDS", ",".join(DEFAULT_FEEDS)).split(",") if f.strip()]
     for src in feeds:
         try:
-            raw = Path(src).read_bytes() if feed_files else fetch(src)
-            items = parse_feed(raw)
-        except Exception as e:  # un flux en panne ne doit pas bloquer les autres
-            print(f"[!] {src} : {e}", file=sys.stderr)
-            continue
+            results.append((src, parse_feed(fetch(src)), None))
+        except Exception as e:      # un flux en panne ne bloque pas les autres
+            results.append((src, [], str(e)))
+    if os.getenv("BRICKFACT", "1") == "1":
+        results.extend(brickfact_items())
+    return results
+
+
+def run(dry_run=False, feed_files=None, status=False):
+    watchlist = load_watchlist()
+    st = load_state()
+    seen, sent_deals = set(st["ids"]), set(st["deals"])
+    sent, report = 0, []
+    for name, items, err in collect(feed_files):
+        ok = err is None
+        report.append(f"{'✅' if ok else '❌'} {name.replace('https://', '')} : "
+                      f"{len(items)} annonces" + ("" if ok else f" ({err[:80]})"))
+        if err:
+            print(f"[!] {name} : {err}", file=sys.stderr)
+        if not feed_files:
+            track_health(st, name, ok, err or "", dry_run)
         for item in items:
             if item["id"] in seen:
                 continue
             seen.add(item["id"])
+            st["ids"].append(item["id"])
             alert = evaluate(item, watchlist)
             if not alert:
                 continue
+            # Même set, même prix, même devise = même deal, quelle que soit la source
+            key = f"{alert['set']}|{alert['cur']}|{alert['price']:.0f}"
+            if key in sent_deals:
+                continue
+            sent_deals.add(key)
+            st["deals"].append(key)
             msg, link = format_alert(alert)
             print(msg, "\n")
             if not dry_run:
                 send(msg, link)
             sent += 1
+    print("\n".join(report))
+    if status and not dry_run:
+        send("🩺 <b>État des sources</b>\n" + "\n".join(esc(r) for r in report)
+             + f"\n\n{sent} nouvelle(s) alerte(s) sur ce passage.")
     if not dry_run:
-        save_seen(seen)
+        save_state(st)
     print(f"{sent} alerte(s).")
     return sent
 
@@ -312,7 +434,7 @@ def main():
                 print(f"chat_id = {chat['id']}  ({chat.get('first_name', '')})")
     else:
         files = [a.split("=", 1)[1] for a in args if a.startswith("--feed-file=")]
-        run(dry_run="--dry-run" in args, feed_files=files or None)
+        run(dry_run="--dry-run" in args, feed_files=files or None, status="--status" in args)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,10 @@
 # Bot LEGO pour Telegram
 
-Toutes les 15 minutes, le bot lit les nouveaux deals de hotukdeals (UK) et de Dealabs (France). Il ne t'envoie un message que si un deal passe tes 3 règles :
+Toutes les 15 minutes, le bot regarde deux types de sources :
+- **les deals publiés par la communauté** : hotukdeals (UK), Dealabs (France), mydealz (Allemagne). C'est là qu'on trouve les codes promo, les remises en magasin, les cagnottes et les erreurs de prix ;
+- **les prix relevés directement chez les marchands** : Brickfact UK, France et Allemagne (Amazon, Fnac, Carrefour…), même quand personne n'a publié le deal.
+
+Un même deal vu par plusieurs sources ne t'est envoyé qu'une fois. Si une source ne répond plus pendant environ 2 heures, tu reçois un message « ⚠️ Source en panne », puis « ✅ Source rétablie » quand elle revient. Quand tu lances le bot à la main (bouton « Run workflow »), il t'envoie aussi l'état de chaque source. Il ne t'envoie un message que si un deal passe tes 3 règles :
 
 1. le set part à la retraite dans les 6 mois (ou est retiré depuis moins de 3 mois) ;
 2. le prix est au moins 30 % sous le prix public ;
