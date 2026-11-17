@@ -25,6 +25,7 @@ Usage :
 """
 
 import csv
+import html
 import json
 import os
 import re
@@ -95,12 +96,16 @@ def parse_feed(xml_bytes):
         guid = (item.findtext("guid") or link or title).strip()
         # Les sites du réseau Pepper (hotukdeals, Dealabs) mettent souvent le prix
         # dans une balise <pepper:merchant price="..."/>. On la cherche sans dépendre du namespace.
-        price_attr = None
+        price_attr, merchant = None, None
         for el in item.iter():
-            if el.tag.endswith("merchant") and el.get("price"):
-                price_attr = el.get("price")
-                break
-        items.append({"id": guid, "title": title, "link": link, "price_attr": price_attr})
+            if el.tag.endswith("merchant"):
+                price_attr = price_attr or el.get("price")
+                merchant = merchant or el.get("name")
+        if not merchant:  # "... @ Amazon" (hotukdeals) ou "... chez Fnac" (Dealabs)
+            m = re.search(r"(?:@|\bchez)\s+([A-Za-z0-9&'. -]{2,30})\s*$", title)
+            merchant = m.group(1).strip() if m else None
+        items.append({"id": guid, "title": title, "link": link, "price_attr": price_attr,
+                      "merchant": merchant})
     return items
 
 
@@ -166,24 +171,67 @@ def evaluate(item, watchlist, today=None):
         return {
             "set": num, "name": s["name"], "theme": s["theme"], "price": price, "cur": cur, "rrp": rrp,
             "discount": discount, "days": days, "retire": s["retire"],
-            "title": item["title"], "link": item["link"],
+            "title": item["title"], "link": item["link"], "merchant": item.get("merchant"),
+            "seuil": s["min_discount"],
         }
     return None
 
 
+# ---------- Indicateur de qualité ----------
+# Hypothèses prudentes (voir README) :
+#   - valeur après retraite : +15 % du prix public pour un set de classe A (seuil 30 %),
+#     +5 % pour la classe B (seuil 40 %) ; la moyenne du marché tourne autour de +6 %/an
+#   - 15 % de frais à la revente (plateforme + envoi)
+REVALO = {"A": 1.15, "B": 1.05}
+FRAIS = 0.15
+
+
+def quality(a):
+    """Renvoie (pastille, libellé, score, bénéfice estimé, marge %)."""
+    classe = "A" if a.get("seuil", 30) <= 30 else "B"
+    resale_net = a["rrp"] * REVALO[classe] * (1 - FRAIS)
+    profit = resale_net - a["price"]
+    margin = profit / a["price"] * 100
+    # Score sur 100 : la remise compte le plus, puis l'urgence (retraite proche), puis la classe
+    score = min(a["discount"], 60) * 1.2                       # jusqu'à 72 pts
+    score += 18 if a["days"] <= 60 else 10 if a["days"] <= 120 else 0
+    score += 10 if classe == "A" else 0
+    score = round(min(score, 100))
+    if score >= 75:
+        return "🟢", "Excellente affaire", score, profit, margin
+    if score >= 62:
+        return "🟡", "Bonne affaire", score, profit, margin
+    return "🟠", "Affaire correcte", score, profit, margin
+
+
+def esc(t):
+    return html.escape(str(t), quote=False)
+
+
 def format_alert(a):
+    """Renvoie (texte HTML, lien du deal)."""
     sym = "£" if a["cur"] == "GBP" else "€"
+    dot, label, score, profit, margin = quality(a)
     if a["days"] >= 0:
-        retire_txt = f"retraite {a['retire']:%d/%m/%Y} (dans {a['days']} j)"
+        retire_txt = f"retraite le {a['retire']:%d/%m/%Y} (dans {a['days']} j)"
     else:
         retire_txt = f"retiré depuis {-a['days']} j"
-    return (
-        f"🧱 {a['set']} {a['name']}" + (f" · {a['theme']}" if a.get("theme") else "") + "\n"
-        f"💰 {sym}{a['price']:.2f} au lieu de {sym}{a['rrp']:.2f} (-{a['discount']:.0f} %)\n"
-        f"⏳ {retire_txt}\n"
-        f"📝 {a['title']}\n"
-        f"🔗 {a['link']}"
-    )
+    fire = "🔥 " if a["discount"] >= 40 else ""
+    lines = [
+        f"{dot} <b>{label}</b> · {score}/100",
+        f"{fire}<b>-{a['discount']:.0f} %</b> · {esc(a['name'])} ({a['set']})",
+        f"💰 <b>{sym}{a['price']:.2f}</b> au lieu de {sym}{a['rrp']:.2f}",
+        f"📈 Bénéfice estimé à la revente : <b>~{sym}{profit:.0f}</b> par boîte ({margin:+.0f} %)",
+        f"⏳ {retire_txt}",
+    ]
+    meta = " · ".join(x for x in [
+        f"🏪 {esc(a['merchant'])}" if a.get("merchant") else "",
+        f"⭐ {esc(a['theme'])}" if a.get("theme") else "",
+    ] if x)
+    if meta:
+        lines.append(meta)
+    lines.append(f"<i>{esc(a['title'])}</i>")
+    return "\n".join(lines), a["link"]
 
 
 # ---------- Telegram ----------
@@ -196,9 +244,13 @@ def tg(method, **params):
         return json.loads(r.read())
 
 
-def send(text):
-    return tg("sendMessage", chat_id=os.environ["TELEGRAM_CHAT_ID"], text=text,
-              disable_web_page_preview="false")
+def send(text, link=None):
+    params = {"chat_id": os.environ["TELEGRAM_CHAT_ID"], "text": text, "parse_mode": "HTML",
+              "disable_web_page_preview": "true"}
+    if link:
+        params["reply_markup"] = json.dumps(
+            {"inline_keyboard": [[{"text": "🛒 Voir le deal", "url": link}]]})
+    return tg("sendMessage", **params)
 
 
 # ---------- Mémoire des annonces déjà vues ----------
@@ -235,10 +287,10 @@ def run(dry_run=False, feed_files=None):
             alert = evaluate(item, watchlist)
             if not alert:
                 continue
-            msg = format_alert(alert)
+            msg, link = format_alert(alert)
             print(msg, "\n")
             if not dry_run:
-                send(msg)
+                send(msg, link)
             sent += 1
     if not dry_run:
         save_seen(seen)
