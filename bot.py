@@ -375,7 +375,8 @@ def collect(feed_files=None):
             results.append((src, parse_feed(fetch(src)), None))
         except Exception as e:      # un flux en panne ne bloque pas les autres
             results.append((src, [], str(e)))
-    if os.getenv("BRICKFACT", "1") == "1":
+    # Désactivé par défaut : Brickfact bloque les serveurs de GitHub (erreur 403).
+    if os.getenv("BRICKFACT", "0") == "1":
         results.extend(brickfact_items())
     return results
 
