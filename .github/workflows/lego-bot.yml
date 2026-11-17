@@ -28,4 +28,5 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           MIN_DISCOUNT: "30"
           RETIRE_WINDOW: "183"
-        run: python bot.py
+        # Lancement manuel (bouton "Run workflow") : t'envoie aussi l'état de chaque source
+        run: python bot.py ${{ github.event_name == 'workflow_dispatch' && '--status' || '' }}
