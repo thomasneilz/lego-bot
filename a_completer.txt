@@ -1,23 +1,160 @@
 # Sets intéressants sans prix public connu : ajoute-les dans manuel.csv
 10332;Medieval Town Square;Icons
+11198;Spin And Electro Dinosaur Vehicle Chase;Marvel
+11200;Spidey And Gobbys Raptor Battle At Tree House Hq;Marvel
+11206;Spidey On His Motorcycle Vs Rhino;Marvel
+11207;Spidey Underwater Vehicles;Marvel
+11208;Team Spidey Pirate Ship;Marvel
+21266;The Nether Lava Battle;Minecraft
+21267;The Illager Desert Patrol;Minecraft
+21268;The Baby Pig House;Minecraft
+21269;The Armadillo Mine Expedition;Minecraft
+21270;The Mooshroom House;Minecraft
+21272;Woodland Mansion Fighting Ring;Minecraft
+21274;The Warden Encounter;Minecraft
+21275;The Tnt Jungle House;Minecraft
+21276;The Creeper;Minecraft
+21277;The Pickaxe Mine;Minecraft
 21346;Family Tree;Ideas
 21347;Red London Telephone Box;Ideas
+21583;Steves Taiga Adventure;Minecraft
+21584;Nether End Portal Journey;Minecraft
+21585;Chicken Farm;Minecraft
+21586;The Pale Garden;Minecraft
+21587;Zombie Dungeon;Minecraft
+21588;The Fox;Minecraft
+21589;Mini Biomes;Minecraft
+31134;Space Shuttle;Creator
+31136;Exotic Parrot;Creator
+31140;Magical Unicorn;Creator
+31146;Flatbed Truck With Helicopter;Creator
+31159;Wild Animals Surprising Spider;Creator
+31163;Playful Cat;Creator
+31166;Beautiful Horse;Creator
+31170;Wild Animals Pink Flamingo;Creator
+31173;Tropical Toucan;Creator
+31376;Cute Hamster With A Flower;Creator
+31377;Turtle With A Water Lily;Creator
+31379;Fierce Dinosaur;Creator
+31381;Fierce Shark With A Treasure Chest;Creator
+31382;Playful Puppy;Creator
+31384;Colourful Hummingbird;Creator
+31385;Beautiful Dolphins;Creator
 40220;London Bus;Creator
+40468;Yellow Taxi;Creator
+40518;High Speed Train;Creator
+40519;New York Postcard;Creator
+40524;Sunflowers;Creator
+40569;London Postcard;Creator
 40649;Up-Scaled LEGO Minifigure;Creator
+40655;Play With Braille French Alphabet;Miscellaneous
+40656;Play With Braille English Alphabet;Miscellaneous
+40713;Japan Postcard;Creator
 40719;Traditional Chess Set;Miscellaneous
+40720;Mini Disney Sleeping Beauty Castle;Disney
+40722;Play With Braille German Alphabet;Miscellaneous
+40723;Play With Braille Italian Alphabet;Miscellaneous
+40724;Play With Braille Spanish Alphabet;Miscellaneous
+40725;Cherry Blossoms;Creator
+40747;Daffodils;Creator
 40805;Arcade Machine;Miscellaneous
+40814;Baby Elephant In The Sky;Miscellaneous
+40817;Yellow Travel Suitcase;Miscellaneous
+40818;Italy Postcard;Creator
+40819;Up Scaled Racing Driver Minifigure;Miscellaneous
 42180;Mars Crew Exploration Rover;Technic
 42181;VTOL Heavy Cargo Spaceship LT81;Technic
 42182;NASA Apollo Lunar Roving Vehicle;Technic
 43008;Nike Dunk;Editions
 43010;Nike Slam Dunk;Editions
 43021;Nike Dunk Trickshot;Editions
+43260;Moanas Island Fun;Disney
+43270;Moanas Adventure Canoe;Disney
+43271;Lucky Penny 101 Dalmatians Puppies;Disney
+43272;Heihei;Disney
+43278;Mini Arendelle Castle Elsas Ice Palace;Disney
+43281;Elsas Ice Castle Snow Ride Adventure;Disney
+43284;Mini Anna Elsa;Disney
+43285;Ariels Magical Mini Palace;Disney
+43286;The Aristocats Adorable Marie;Disney
+43287;Olaf And Brunis Picnic Fun;Disney
+43288;Sallys Flowerpot;Disney
+43291;Mini Belle Tiana With Castle;Disney
+43303;Mini Jasmine Rapunzel;Disney
+60205;Tracks;City
+60238;Switch Tracks;City
+60304;Road Plates;City
+60312;Police Car;City
+60316;Police Station;City
 60337;Passenger Express Train;City
+60362;Car Wash;City
+60363;Ice Cream Parlour;City
+60367;Passenger Airplane;City
+60373;Fire Rescue Boat;City
+60400;Go Karts And Race Drivers;City
+60402;Monster Truck;City
+60404;Burger Truck;City
+60407;Double Decker Sightseeing Bus;City
+60411;Fire Rescue Helicopter;City
+60414;Fire Station With Fire Truck;City
+60415;Police Car And Muscle Car Chase;City
+60419;Police Prison Island;City
+60423;Downtown Streetcar And Station;City
+60430;Interstellar Spaceship;City
+60442;F1 Driver With Mclaren Race Car;City
+60443;F1 Pit Stop Pit Crew With Ferrari Car;City
 60445;F1 Truck with RB20 & AMR24 F1 Cars;City
+60447;Off Road Mountain Truck;City
+60451;Emergency Ambulance;City
+60454;Holiday Camper Van;City
+60456;Police Boat;City
+60457;Custom Police Garage;City
+60463;Fire Engine;City
+60464;F1 Williams Racing Haas F1 Race Cars;City
+60465;Air Ambulance;City
+60466;Bulldozer;City
 60469;Central Train Station;City
+60470;Explorer Train;City
+60471;Arctic Truck;City
+60478;Cement Mixer;City
+60479;Police Prisoner Transport Van;City
+60481;Police Truck;City
+60482;Fire Engine;City
+60483;Loader;City
+60484;Gaming Car;City
+60485;Hot Rod;City
+60486;Ev Supercar;City
+60487;Yellow Taxi;City
+60488;Fries Food Truck;City
+60489;Jet Vs Car;City
+60490;Snowplough;City
+60491;Motorcycle Transporter;City
 60493;F1 Display Truck with Audi F1 Race Car;City
+60495;Recycling Truck;City
+60498;Tractor;City
+60499;Airport Fire Truck;City
+60500;The Lego Van;City
+60502;Airport With Airplane;City
+60503;Coast Guard Helicopter;City
+60504;Coast Guard Rescue Boat;City
+60505;Airplane Service Truck Hovercraft Remix;City
+60508;Police Train Heist;City
 66823;Cristiano Ronaldo - CR7 Collectors Set;Editions
+71440;Adventures With Interactive Lego Luigi;Super Mario
+71441;Adventures With Interactive Lego Peach;Super Mario
+71780;Kais Ninja Race Car Evo;Ninjago
 71799;NINJAGO City Markets;Ninjago
+71826;Dragon Spinjitzu Battle Pack;Ninjago
+71827;Zanes Battle Suit Mech;Ninjago
+71838;Kais Motorcycle Speed Race;Ninjago
+71839;Arins Spinjitzu Battle Mech;Ninjago
+71840;Rogue Vs Drix Race Car Duel;Ninjago
+71849;Nya Vs Mutation Monster Spinner;Ninjago
+71850;Lloyd Vs Earth Monster Spinner;Ninjago
+71851;Kais Dragon Mech Battle Pack;Ninjago
+71853;Jays Dragon Mech Fight;Ninjago
+71854;Coles Mission Mech;Ninjago
+72045;Shy Guy P Wing;Super Mario
 72151;Eevee;Pokemon
 72152;Pikachu and Poke Ball;Pokemon
 72153;Venusaur, Charizard and Blastoise;Pokemon
@@ -28,12 +165,20 @@
 75639;The Going Merry Pirate Ship;One Piece
 75640;The Baratie Floating Restaurant;One Piece
 75683;Glinda & Elphaba's Dormitory;Wicked
+76335;Spider Man Vs Ghost Rider Motorcycle;Marvel
+76336;Spider Man Car Vs Venomized Wolverine;Marvel
+76337;Miles Morales Mech Vs Spider Man 2099;Marvel
 76421;Dobby the House-Elf;Harry Potter
 76433;Mandrake;Harry Potter
 76784;Black Dahlia Flower;Wednesday
 76786;Morticia's Cottage;Wednesday
+76935;Nascar Next Gen Chevrolet Camaro Zl1;Speed Champions
+77001;Sonics Campfire Clash;Sonic
+77002;Cyclone Vs Metal Sonic;Sonic
+77005;Knuckles Vs Dr Eggman Egg Crusher Mech;Sonic
 77051;Fly with Dodo Airlines;Animal Crossing
 77052;K.K.'s Concert at the Plaza;Animal Crossing
 77053;Stargazing with Celeste;Animal Crossing
 77056;Blathers's Museum Collection;Animal Crossing
 77058;Goldie's Cosy House;Animal Crossing
+77117;Sonic Speedster Lightning;Sonic
