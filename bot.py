@@ -34,7 +34,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 HERE = Path(__file__).parent
@@ -531,16 +531,21 @@ HELP = ("🧱 <b>Commandes du bot LEGO</b>\n"
         "/deals : meilleures affaires des 7 derniers jours\n"
         "/deals fnac : seulement ce magasin (leclerc, amazon, argos…)\n"
         "/aide : réaffiche et réépingle ce message\n"
-        "<i>Réponse au prochain passage du bot (15 min max).</i>")
+        "<i>Réponse en 15 min max (mode secours, sans Cloudflare).</i>")
+
+
+NEW_DEALS = []
 
 
 def remember_deal(st, a):
+    NEW_DEALS.append(None)
     st.setdefault("recent", []).append({
-        "ts": datetime.utcnow().isoformat(timespec="minutes"), "set": a["set"], "name": a["name"],
+        "ts": datetime.now(timezone.utc).replace(tzinfo=None).isoformat(timespec="minutes"), "set": a["set"], "name": a["name"],
         "price": a["price"], "cur": a["cur"], "rrp": a["rrp"], "discount": round(a["discount"]),
         "score": quality(a)[2], "merchant": a.get("merchant") or "", "country": a.get("country") or "",
         "link": a["link"], "title": a["title"]})
-    cutoff = (datetime.utcnow().timestamp() - 7 * 86400)
+    NEW_DEALS[-1] = st["recent"][-1]
+    cutoff = (datetime.now(timezone.utc).replace(tzinfo=None).timestamp() - 7 * 86400)
     st["recent"] = [d for d in st["recent"]
                     if datetime.fromisoformat(d["ts"]).timestamp() >= cutoff][-300:]
 
@@ -564,7 +569,7 @@ def save_stock(stock):
 def backup_stock():
     """Envoie stock.json en silence dans Telegram. Pour restaurer : renvoie ce fichier au bot."""
     token, chat = os.environ["TELEGRAM_TOKEN"], os.environ["TELEGRAM_CHAT_ID"]
-    boundary = "----legobot" + str(int(datetime.utcnow().timestamp()))
+    boundary = "----legobot" + str(int(datetime.now(timezone.utc).replace(tzinfo=None).timestamp()))
     parts = []
     for k, v in {"chat_id": chat, "disable_notification": "true",
                  "caption": "💾 Sauvegarde de ton stock (renvoie ce fichier au bot pour le restaurer)"}.items():
@@ -711,6 +716,57 @@ def tg_send(text, markup=None, reply_markup_force=False):
     return tg("sendMessage", **params)
 
 
+WORKER_URL = os.getenv("WORKER_URL", "").rstrip("/")
+SHARED_SECRET = os.getenv("SHARED_SECRET", "")
+
+
+def worker_call(method, path, payload=None):
+    req = urllib.request.Request(WORKER_URL + path, method=method,
+                                 data=json.dumps(payload).encode() if payload is not None else None,
+                                 headers={"X-Shared-Secret": SHARED_SECRET, "Content-Type": "application/json",
+                                          "User-Agent": "lego-bot/1.0"})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return json.loads(r.read())
+
+
+def fetch_updates(stock):
+    """Renvoie (updates, mode).
+    mode "worker" : Cloudflare répond lui-même aux commandes, instantanément.
+                    Ici on garde juste une copie du stock (secours) et on vérifie le branchement.
+    mode "poll"   : pas de Cloudflare (ou Cloudflare en panne) : lecture toutes les 15 min."""
+    if WORKER_URL and SHARED_SECRET:
+        try:
+            worker_call("GET", "/health")
+            remote = worker_call("GET", "/export")
+            local = {"items": stock.get("items", []), "sold": stock.get("sold", [])}
+            if stock.get("fallback") or (not remote["items"] and not remote["sold"]
+                                         and (local["items"] or local["sold"]) and not stock.get("migrated")):
+                # Cloudflare revient (ou premier branchement) : on lui renvoie le stock tenu en secours
+                worker_call("POST", "/import", local)
+                remote = local
+            stock["migrated"] = True
+            stock["items"], stock["sold"] = remote["items"], remote["sold"]
+            info = tg("getWebhookInfo").get("result", {})
+            if info.get("url") != WORKER_URL + "/":
+                worker_call("GET", "/setup")          # branche Telegram sur Cloudflare + menu + épinglage
+                if stock.get("fallback"):
+                    tg_send("✅ Réponses instantanées rétablies (Cloudflare répond de nouveau).")
+            stock["fallback"] = False
+            return [], "worker"
+        except Exception as e:
+            print(f"[!] Cloudflare indisponible : {e}", file=sys.stderr)
+            try:
+                tg("deleteWebhook")                   # secours : on relit les messages toutes les 15 min
+            except Exception:
+                pass
+            if not stock.get("fallback"):
+                stock["fallback"] = True
+                tg_send("⚠️ Cloudflare ne répond pas : je repasse en mode 15 minutes pour tes commandes. "
+                        "Je réessaie à chaque passage.")
+    updates = tg("getUpdates", offset=stock["offset"], timeout=0).get("result", [])
+    return updates, "poll"
+
+
 def pin_help():
     """Envoie la liste des commandes et l'épingle en haut de la conversation."""
     r = tg_send(HELP)
@@ -724,7 +780,8 @@ def process_commands(st, watchlist):
     changed = False
     before = json.dumps([stock["items"], stock["sold"]], sort_keys=True)
     chat = str(os.environ["TELEGRAM_CHAT_ID"])
-    if stock.get("menu_set") != "v2":
+    worker_mode = bool(WORKER_URL and SHARED_SECRET)
+    if not worker_mode and stock.get("menu_set") != "v2":
         try:
             tg("setMyCommands", commands=json.dumps([
                 {"command": "achat", "description": "Enregistrer un achat : /achat 75415 48.99"},
@@ -734,16 +791,28 @@ def process_commands(st, watchlist):
             stock["menu_set"], changed = "v2", True
         except Exception as e:
             print(f"[!] menu Telegram : {e}", file=sys.stderr)
-    if not stock.get("help_pinned"):
+    if not worker_mode and not stock.get("help_pinned"):
         try:
             pin_help()
             stock["help_pinned"], changed = True, True
         except Exception as e:
             print(f"[!] épinglage : {e}", file=sys.stderr)
-    updates = tg("getUpdates", offset=stock["offset"], timeout=0).get("result", [])
-    for u in updates:
-        stock["offset"] = u["update_id"] + 1
+    fb_before = stock.get("fallback")
+    updates, mode = fetch_updates(stock)
+    if stock.get("fallback") != fb_before:
         changed = True
+    done = set(stock.get("done_ids", []))
+    processed = []
+    for u in updates:
+        processed.append(u["update_id"])
+        if mode == "poll":
+            stock["offset"] = u["update_id"] + 1
+        changed = True
+        if u["update_id"] in done:
+            continue                      # déjà traité (accusé non reçu par Cloudflare)
+        done.add(u["update_id"])
+        stock.setdefault("done_ids", []).append(u["update_id"])
+        stock["done_ids"] = stock["done_ids"][-300:]
         cb = u.get("callback_query")
         msg = u.get("message") or {}
         from_chat = str((cb or {}).get("message", {}).get("chat", {}).get("id") or msg.get("chat", {}).get("id"))
@@ -811,9 +880,16 @@ def process_commands(st, watchlist):
         except Exception as e:
             print(f"[!] commande : {e}", file=sys.stderr)
             tg_send(f"⚠️ Je n'ai pas pu traiter « {esc(text if not cb else 'le bouton')[:60]} » : {esc(e)[:120]}")
+    if mode == "worker":
+        try:
+            worker_call("POST", "/daily", {})          # contrôle « moment de vendre » (1 fois par jour)
+        except Exception as e:
+            print(f"[!] contrôle quotidien Cloudflare : {e}", file=sys.stderr)
+        save_stock(stock)                            # copie de secours du stock (cache privé GitHub)
+        return changed
     # Une fois par jour : alerte « moment de vendre »
     today = date.today().isoformat()
-    if stock["items"] and stock.get("last_sell_check") != today and datetime.utcnow().hour >= 8:
+    if stock["items"] and stock.get("last_sell_check") != today and datetime.now(timezone.utc).replace(tzinfo=None).hour >= 8:
         stock["last_sell_check"], changed = today, True
         for it in stock["items"]:
             v = value_in(it["cur"], it["set"])
@@ -897,6 +973,11 @@ def run(dry_run=False, feed_files=None, status=False):
                 send(msg, link)
             sent += 1
     print("\n".join(report))
+    if NEW_DEALS and not dry_run and WORKER_URL and SHARED_SECRET:
+        try:
+            worker_call("POST", "/deals", NEW_DEALS)    # pour /deals instantané
+        except Exception as e:
+            print(f"[!] envoi des deals à Cloudflare : {e}", file=sys.stderr)
     if status and not dry_run:
         send("🩺 <b>État des sources</b>\n" + "\n".join(esc(r) for r in report)
              + f"\n\n{sent} nouvelle(s) alerte(s) sur ce passage.")

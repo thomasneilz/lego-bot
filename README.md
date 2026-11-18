@@ -115,11 +115,17 @@ GitHub saute souvent les passages planifiés. cron-job.org appelle donc le bot t
 - Corps : `{"ref":"main"}`
 La planification GitHub reste active en secours ; un même deal n'est jamais envoyé deux fois.
 
-## Commandes Telegram
-Le bot lit tes messages à chaque passage (réponse en 15 minutes maximum). Seuls tes messages sont pris en compte : si quelqu'un d'autre écrit au bot, il est ignoré.
+## Commandes Telegram (réponse instantanée via Cloudflare)
+Un petit relais Cloudflare (`cloudflare/worker.js`, offre gratuite) reçoit tes messages et répond en une seconde. Il garde ton stock et les deals des 7 derniers jours dans une base D1. Le bot GitHub lui envoie les nouveaux deals et lance chaque jour le contrôle « moment de vendre ». Seuls tes messages sont pris en compte : si quelqu'un d'autre écrit au bot, il est ignoré.
+Si Cloudflare ne répond plus, le bot GitHub le détecte, te prévient, et reprend lui-même les commandes toutes les 15 minutes avec sa copie du stock ; quand Cloudflare revient, il lui renvoie le stock et rebranche tout.
 - `/achat 75415 48.99` : enregistre un achat. Options dans n'importe quel ordre : `x2` (quantité), `£` (sinon euros), le nom du magasin. Exemple : `/achat 75399 £35.99 x2 amazon`.
 - `/stock` : ton stock, le prix payé, la valeur de marché actuelle (Brickfact, convertie en £ au taux BCE du jour si besoin) et ta plus-value. Sous chaque set, un bouton **✅ Vendu** : le bot te demande le prix de vente et enregistre la plus-value réalisée.
 - `/deals` : les meilleures affaires des 7 derniers jours qui passent tes règles. `/deals fnac` (ou leclerc, amazon, argos…) : seulement ce magasin. Chaque ligne indique le pays (🇬🇧 🇫🇷 🇩🇪).
 - Une fois par jour, si un set de ton stock a pris +50 % (réglage `SELL_TARGET`), tu reçois « 📈 Moment de vendre ? ».
 
-Ton stock n'est pas enregistré dans le dépôt (qui est public) mais dans le cache privé de GitHub Actions. À chaque changement, le bot t'envoie aussi en silence un fichier `stock.json` dans Telegram : pour restaurer ton stock, renvoie simplement ce fichier au bot.
+Ton stock n'est pas enregistré dans le dépôt (qui est public) : il est dans la base Cloudflare, avec une copie de secours dans le cache privé de GitHub Actions. À chaque changement, le bot t'envoie aussi en silence un fichier `stock.json` dans Telegram : pour restaurer ton stock, renvoie simplement ce fichier au bot.
+
+## Secrets GitHub pour Cloudflare
+- `WORKER_URL` : adresse du Worker (https://lego-bot.<nom>.workers.dev)
+- `SHARED_SECRET` : mot de passe partagé, identique à celui réglé dans Cloudflare
+Installation pas à pas : fichier CLOUDFLARE_INSTALLATION.txt (sur ton PC).
