@@ -524,11 +524,13 @@ def track_health(st, name, ok, detail, dry_run):
 # Lues à chaque passage (toutes les 15 min) via getUpdates.
 # Seuls les messages venant de TELEGRAM_CHAT_ID sont pris en compte.
 SELL_TARGET = float(os.getenv("SELL_TARGET", "50"))   # alerte « moment de vendre » à +50 %
-HELP = ("🧱 <b>Commandes</b>\n"
-        "/achat 75415 48.99 : enregistre un achat (options : x2, £, nom du magasin)\n"
+HELP = ("🧱 <b>Commandes du bot LEGO</b>\n"
+        "/achat 75415 48.99 : enregistre un achat. Virgule ou point, € ou £ avant ou après.\n"
+        "   Options : x2 (quantité), nom du magasin. Ex. : /achat 75399 35,99£ x2 amazon\n"
         "/stock : ton stock, sa valeur et ta plus-value (bouton ✅ Vendu)\n"
         "/deals : meilleures affaires des 7 derniers jours\n"
         "/deals fnac : seulement ce magasin (leclerc, amazon, argos…)\n"
+        "/aide : réaffiche et réépingle ce message\n"
         "<i>Réponse au prochain passage du bot (15 min max).</i>")
 
 
@@ -709,21 +711,35 @@ def tg_send(text, markup=None, reply_markup_force=False):
     return tg("sendMessage", **params)
 
 
+def pin_help():
+    """Envoie la liste des commandes et l'épingle en haut de la conversation."""
+    r = tg_send(HELP)
+    tg("pinChatMessage", chat_id=os.environ["TELEGRAM_CHAT_ID"],
+       message_id=r["result"]["message_id"], disable_notification="true")
+
+
 def process_commands(st, watchlist):
     """Lit les nouveaux messages Telegram et y répond. Renvoie True si le stock a changé."""
     stock = load_stock()
     changed = False
     before = json.dumps([stock["items"], stock["sold"]], sort_keys=True)
     chat = str(os.environ["TELEGRAM_CHAT_ID"])
-    if not stock.get("menu_set"):
+    if stock.get("menu_set") != "v2":
         try:
             tg("setMyCommands", commands=json.dumps([
                 {"command": "achat", "description": "Enregistrer un achat : /achat 75415 48.99"},
                 {"command": "stock", "description": "Mon stock, sa valeur, bouton Vendu"},
-                {"command": "deals", "description": "Meilleurs deals (option : magasin)"}]))
-            stock["menu_set"], changed = True, True
+                {"command": "deals", "description": "Meilleurs deals (option : magasin)"},
+                {"command": "aide", "description": "Liste des commandes (épinglée)"}]))
+            stock["menu_set"], changed = "v2", True
         except Exception as e:
             print(f"[!] menu Telegram : {e}", file=sys.stderr)
+    if not stock.get("help_pinned"):
+        try:
+            pin_help()
+            stock["help_pinned"], changed = True, True
+        except Exception as e:
+            print(f"[!] épinglage : {e}", file=sys.stderr)
     updates = tg("getUpdates", offset=stock["offset"], timeout=0).get("result", [])
     for u in updates:
         stock["offset"] = u["update_id"] + 1
@@ -786,6 +802,8 @@ def process_commands(st, watchlist):
             elif cmd == "/stock":
                 text_, markup = stock_message(stock, watchlist)
                 tg_send(text_, markup)
+            elif cmd in ("/aide", "/help", "/start"):
+                pin_help()
             elif cmd == "/deals":
                 tg_send(deals_message(st, " ".join(parts[1:]) or None))
             else:
