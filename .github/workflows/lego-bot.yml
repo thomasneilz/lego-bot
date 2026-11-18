@@ -44,6 +44,8 @@ jobs:
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          WORKER_URL: ${{ secrets.WORKER_URL }}
+          SHARED_SECRET: ${{ secrets.SHARED_SECRET }}
           MIN_DISCOUNT: "30"
           RETIRE_WINDOW: "183"
         run: python bot.py ${{ inputs.status && '--status' || '' }}
