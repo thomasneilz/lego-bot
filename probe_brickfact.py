@@ -47,6 +47,22 @@ try:
     # Essai concret sur le casque Kylo Ren, si un outil d'offres existe
     names = [t["name"] for t in tools["result"]["tools"]]
     print("\nNOMS:", names)
+    st = [t for t in tools["result"]["tools"] if t["name"] == "search_sets"][0]
+    print("\nSEARCH_ARGS:", json.dumps(st.get("inputSchema", {}).get("properties", {}))[600:2500])
+    calls = [
+        ("get_set_offers", {"market": "GB", "set_id": 75415, "price_basis": "item"}),
+        ("get_set_offers", {"market": "FR", "set_id": 75415, "price_basis": "item"}),
+        ("get_price_history", {"market": "FR", "set_id": 75415, "range": "1Y"}),
+        ("assess_deal", {"market": "GB", "set_id": 76452}),
+    ]
+    for i, (name, args) in enumerate(calls, start=10):
+        res = rpc("tools/call", {"name": name, "arguments": args}, id_=i)
+        print(f"\n===== {name} {args}")
+        r = res.get("result", res)
+        if isinstance(r, dict) and "structuredContent" in r:
+            print("STRUCT:", json.dumps(r["structuredContent"])[:2500])
+        for c in (r.get("content") or [])[:2] if isinstance(r, dict) else []:
+            print("TEXT:", str(c.get("text", ""))[:1500])
 except Exception as e:
     print("ERREUR:", repr(e))
     sys.exit(1)
