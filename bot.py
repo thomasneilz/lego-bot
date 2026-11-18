@@ -41,12 +41,11 @@ WATCHLIST = HERE / "watchlist.csv"
 SEEN_FILE = HERE / "seen.json"
 
 DEFAULT_FEEDS = [
-    "https://www.hotukdeals.com/rss/new",
-    "https://www.hotukdeals.com/rss/hot",
-    "https://www.dealabs.com/rss/new",
-    "https://www.dealabs.com/rss/hot",
-    "https://www.mydealz.de/rss/new",
-    "https://www.mydealz.de/rss/hot",
+    # Flux réservés aux LEGO : leurs 30 annonces = les 30 derniers deals LEGO (plusieurs jours),
+    # alors que les flux généraux ne gardent que les 30 derniers deals tous produits confondus.
+    "https://www.hotukdeals.com/rss/tag/lego",
+    "https://www.dealabs.com/rss/groupe/lego",
+    "https://www.mydealz.de/rss/gruppe/lego",
 ]
 
 MIN_DISCOUNT = float(os.getenv("MIN_DISCOUNT", "30"))
