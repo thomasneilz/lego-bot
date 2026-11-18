@@ -32,6 +32,14 @@ jobs:
           key: seen-${{ github.run_id }}
           restore-keys: seen-
 
+      # Ton stock (/achat, /stock) : mémoire privée, non visible publiquement
+      # contrairement aux fichiers du dépôt. Sauvegarde aussi envoyée dans Telegram.
+      - uses: actions/cache@v4
+        with:
+          path: stock.json
+          key: stock-${{ github.run_id }}
+          restore-keys: stock-
+
       - name: Chercher les deals
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
