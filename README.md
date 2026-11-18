@@ -2,7 +2,7 @@
 
 Toutes les 15 minutes, le bot regarde deux types de sources :
 - **les deals publiés par la communauté** : hotukdeals (UK), Dealabs (France), mydealz (Allemagne). C'est là qu'on trouve les codes promo, les remises en magasin, les cagnottes et les erreurs de prix ;
-- **les prix relevés directement chez les marchands** : Brickfact UK, France et Allemagne (Amazon, Fnac, Carrefour…), même quand personne n'a publié le deal.
+- **les prix relevés directement chez les marchands** via le serveur public officiel de Brickfact (Fnac, Amazon, Darty, LEGO…), au Royaume-Uni et en France, même quand personne n'a publié le deal. Le bot interroge 10 sets par passage à tour de rôle (toute la liste est revue en 4 heures environ), au prix livré, port compris.
 
 Un même deal vu par plusieurs sources ne t'est envoyé qu'une fois. Si une source ne répond plus pendant environ 2 heures, tu reçois un message « ⚠️ Source en panne », puis « ✅ Source rétablie » quand elle revient. Quand tu lances le bot à la main (bouton « Run workflow »), il t'envoie aussi l'état de chaque source. Il ne t'envoie un message que si un deal passe tes 3 règles :
 
@@ -102,3 +102,15 @@ Chaque alerte affiche une pastille et une note sur 100 :
 - La note combine la remise (jusqu'à 72 points), l'urgence (+18 si la retraite est à moins de 60 jours ou déjà passée, +10 à moins de 120 jours) et la classe du set (+10 pour la classe A).
 
 La **plus-value brute** suppose, de façon prudente, une revente à +15 % du prix public après la retraite pour la classe A (+5 % pour la classe B), moins ton prix d'achat. La ligne **net** retire en plus 15 % de frais de revente (commission eBay/Vinted/BrickLink et envoi du colis). C'est un ordre de grandeur : vérifie toujours les ventes réelles sur BrickLink avant d'acheter en quantité. Les réglages sont dans `bot.py` (`REVALO`, `FRAIS`).
+
+## Valeur de marché et cagnottes
+- Chaque alerte affiche, quand Brickfact la connaît, la **valeur de marché actuelle du set scellé** (en euros) et, pour un deal en euros, le gain brut si tu revendais tout de suite.
+- Quand la remise passe par une cagnotte ou une carte de fidélité, l'alerte le signale : ce n'est pas une baisse de prix en cash.
+
+## Déclenchement externe (cron-job.org)
+GitHub saute souvent les passages planifiés. cron-job.org appelle donc le bot toutes les 15 minutes via l'API GitHub :
+- URL : `https://api.github.com/repos/thomasneilz/lego-bot/actions/workflows/lego-bot.yml/dispatches`
+- Méthode : `POST`
+- En-têtes : `Authorization: Bearer <ta clé GitHub>`, `Accept: application/vnd.github+json`, `X-GitHub-Api-Version: 2022-11-28`
+- Corps : `{"ref":"main"}`
+La planification GitHub reste active en secours ; un même deal n'est jamais envoyé deux fois.

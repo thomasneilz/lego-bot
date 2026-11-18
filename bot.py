@@ -30,6 +30,7 @@ import json
 import os
 import re
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -227,6 +228,16 @@ def format_alert(a):
         f"   ↳ net après commission et envoi : ~{sym}{net:.0f}",
         f"⏳ {retire_txt}",
     ]
+    if re.search(r"cagnott|fid[ée]lit|cashback|clubcard|nectar|bon d'achat", a["title"], re.I):
+        lines.append("💳 Remise versée en cagnotte / carte fidélité : pas une baisse de prix en cash")
+    if os.getenv("BRICKFACT_MCP", "1") == "1":
+        mv = market_value(a["set"])
+        if mv:
+            if a["cur"] == "EUR":
+                lines.append(f"📊 Valeur marché actuelle (scellé, Brickfact) : <b>€{mv:.0f}</b>"
+                             f" → revente immédiate {mv - a['price']:+.0f} € brut")
+            else:
+                lines.append(f"📊 Valeur marché actuelle (scellé, Brickfact) : <b>€{mv:.0f}</b>")
     meta = " · ".join(x for x in [
         f"🏪 {esc(a['merchant'])}" if a.get("merchant") else "",
         f"⭐ {esc(a['theme'])}" if a.get("theme") else "",
@@ -339,6 +350,144 @@ def brickfact_items():
     return results
 
 
+# ---------- Source 3 : serveur MCP public de Brickfact (officiel, sans clé) ----------
+# https://mcp.brickfact.com/mcp : offres des marchands surveillés (Fnac, Amazon, Darty, LEGO…)
+# et valeur de marché quotidienne des sets scellés. On interroge quelques sets par passage,
+# à tour de rôle, pour rester raisonnable avec leur serveur.
+BF_MCP_URL = "https://mcp.brickfact.com/mcp"
+BF_MARKETS = [m.strip() for m in os.getenv("BF_MARKETS", "GB,FR").split(",") if m.strip()]
+BF_BATCH = int(os.getenv("BF_BATCH", "10"))         # sets interrogés par passage et par pays
+BF_CUR = {"GB": "GBP", "FR": "EUR", "DE": "EUR", "ES": "EUR", "IT": "EUR", "NL": "EUR", "AT": "EUR"}
+
+
+class RateLimited(Exception):
+    pass
+
+
+class BrickfactMCP:
+    def __init__(self):
+        self.sid, self.n = None, 0
+
+    def _post(self, body):
+        h = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream",
+             "User-Agent": "lego-bot/1.0 (+https://github.com/thomasneilz/lego-bot)"}
+        if self.sid:
+            h["Mcp-Session-Id"] = self.sid
+        req = urllib.request.Request(BF_MCP_URL, data=json.dumps(body).encode(), headers=h)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as r:
+                self.sid = r.headers.get("Mcp-Session-Id") or self.sid
+                raw = r.read().decode("utf-8", "replace")
+        except urllib.error.HTTPError as e:
+            if e.code == 429:
+                raise RateLimited(e.headers.get("Retry-After", "?"))
+            raise
+        for line in raw.splitlines():          # réponse JSON directe ou flux SSE
+            if line.startswith("data:"):
+                raw = line[5:].strip()
+        return json.loads(raw) if raw.strip() else None
+
+    def start(self):
+        self._post({"jsonrpc": "2.0", "id": 0, "method": "initialize",
+                    "params": {"protocolVersion": "2025-03-26", "capabilities": {},
+                               "clientInfo": {"name": "lego-bot", "version": "1.0"}}})
+        self._post({"jsonrpc": "2.0", "method": "notifications/initialized"})
+
+    def call(self, tool, **args):
+        self.n += 1
+        res = self._post({"jsonrpc": "2.0", "id": self.n, "method": "tools/call",
+                          "params": {"name": tool, "arguments": args}})
+        r = (res or {}).get("result") or {}
+        if r.get("isError"):
+            raise RuntimeError(str(r.get("content"))[:200])
+        if "structuredContent" in r:
+            return r["structuredContent"]
+        for c in r.get("content") or []:        # repli : JSON dans le texte
+            try:
+                return json.loads(c.get("text", ""))
+            except Exception:
+                pass
+        return {}
+
+
+_bf = None
+_valuations = {}
+
+
+def bf_client():
+    global _bf
+    if _bf is None:
+        _bf = BrickfactMCP()
+        _bf.start()
+    return _bf
+
+
+def in_window(s, today=None):
+    days = (s["retire"] - (today or date.today())).days
+    return -RETIRED_GRACE <= days <= RETIRE_WINDOW
+
+
+def brickfact_offer_items(watchlist, st):
+    """Interroge à tour de rôle BF_BATCH sets de la watchlist (dans la fenêtre de retraite)."""
+    nums = sorted(n for n, s in watchlist.items() if in_window(s))
+    if not nums:
+        return [], None
+    cur = st.get("bf_cursor", 0) % len(nums)
+    batch = (nums + nums)[cur:cur + min(BF_BATCH, len(nums))]
+    st["bf_cursor"] = cur + len(batch)
+    items, errors = [], []
+    client = bf_client()
+    for num in batch:
+        for market in BF_MARKETS:
+            try:
+                data = client.call("get_set_offers", market=market, set_id=int(num), price_basis="item")
+            except RateLimited as e:
+                return items, f"limite de requêtes atteinte (Retry-After {e})"
+            except Exception as e:
+                errors.append(f"{num}/{market} : {e}")
+                continue
+            offers = [o for o in data.get("offers") or [] if o.get("item_price")]
+            if not offers:
+                continue
+            # Prix livré (article + port) : c'est ce que tu paies vraiment.
+            # Port inconnu = non compté comme gratuit : on écarte ces offres.
+            offers = [o for o in offers if o.get("shipping") is not None]
+            if not offers:
+                continue
+            best = min(offers, key=lambda o: o.get("total") or o["item_price"] + o["shipping"])
+            price = float(best.get("total") or best["item_price"] + best["shipping"])
+            sym = "£" if (best.get("currency") or BF_CUR.get(market)) == "GBP" else "€"
+            ship = float(best["shipping"])
+            ship_txt = " (livraison offerte)" if ship == 0 else f" (dont {sym}{ship:.2f} de port)"
+            items.append({
+                "id": f"bfo:{market}:{num}:{best.get('retailer')}:{price:.2f}",
+                "title": f"LEGO {num} {sym}{price:.2f} @ {best.get('retailer')}{ship_txt}",
+                "link": (data.get("comparison_url") or "").split("?")[0],
+                "price_attr": None,
+                "merchant": f"{best.get('retailer')} ({market}, via Brickfact)",
+            })
+    err = None
+    if errors and not items:
+        err = "; ".join(errors[:3])
+    return items, err
+
+
+def market_value(num):
+    """Valeur de marché actuelle d'un set scellé (EUR, Brickfact). None si indisponible."""
+    if num in _valuations:
+        return _valuations[num]
+    val = None
+    try:
+        data = bf_client().call("get_price_history", market="FR", set_id=int(num), range="1M")
+        pts = [p for p in data.get("points") or [] if p.get("value")]
+        if pts:
+            val = float(sorted(pts, key=lambda p: p["date"])[-1]["value"])
+    except Exception as e:
+        print(f"[!] valeur Brickfact {num} : {e}", file=sys.stderr)
+    _valuations[num] = val
+    return val
+
+
 # ---------- Santé des sources ----------
 FAIL_ALERT_AFTER = 8          # 8 passages ratés d'affilée (~2 h) avant de te prévenir
 
@@ -363,7 +512,7 @@ def track_health(st, name, ok, detail, dry_run):
 
 # ---------- Programme principal ----------
 
-def collect(feed_files=None):
+def collect(feed_files=None, watchlist=None, st=None):
     """Renvoie [(nom_source, items, erreur)]."""
     if feed_files:
         return [(f, parse_feed(Path(f).read_bytes()), None) for f in feed_files]
@@ -377,6 +526,12 @@ def collect(feed_files=None):
     # Désactivé par défaut : Brickfact bloque les serveurs de GitHub (erreur 403).
     if os.getenv("BRICKFACT", "0") == "1":
         results.extend(brickfact_items())
+    if os.getenv("BRICKFACT_MCP", "1") == "1" and watchlist is not None:
+        try:
+            items, err = brickfact_offer_items(watchlist, st)
+        except Exception as e:
+            items, err = [], str(e)
+        results.append(("Brickfact (offres marchands)", items, err))
     return results
 
 
@@ -385,7 +540,7 @@ def run(dry_run=False, feed_files=None, status=False):
     st = load_state()
     seen, sent_deals = set(st["ids"]), set(st["deals"])
     sent, report = 0, []
-    for name, items, err in collect(feed_files):
+    for name, items, err in collect(feed_files, watchlist, st):
         ok = err is None
         report.append(f"{'✅' if ok else '❌'} {name.replace('https://', '')} : "
                       f"{len(items)} annonces" + ("" if ok else f" ({err[:80]})"))
