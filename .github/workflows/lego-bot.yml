@@ -2,8 +2,18 @@ name: Bot LEGO
 
 on:
   schedule:
-    - cron: "*/15 * * * *"   # toutes les 15 minutes
-  workflow_dispatch:          # bouton "Run workflow" pour lancer à la main
+    - cron: "7,22,37,52 * * * *"   # secours : GitHub saute souvent ces créneaux
+  workflow_dispatch:                # déclenché toutes les 15 min par cron-job.org, ou à la main
+    inputs:
+      status:
+        description: "M'envoyer l'état des sources sur Telegram"
+        type: boolean
+        default: false
+
+# Jamais deux passages en même temps (ils se marcheraient dessus dans seen.json)
+concurrency:
+  group: lego-bot
+  cancel-in-progress: false
 
 jobs:
   scan:
@@ -28,5 +38,4 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           MIN_DISCOUNT: "30"
           RETIRE_WINDOW: "183"
-        # Lancement manuel (bouton "Run workflow") : t'envoie aussi l'état de chaque source
-        run: python bot.py ${{ github.event_name == 'workflow_dispatch' && '--status' || '' }}
+        run: python bot.py ${{ inputs.status && '--status' || '' }}
