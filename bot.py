@@ -40,6 +40,13 @@ from pathlib import Path
 HERE = Path(__file__).parent
 WATCHLIST = HERE / "watchlist.csv"
 SEEN_FILE = HERE / "seen.json"
+STOCK_FILE = HERE / "stock.json"     # tes achats : cache privé GitHub + sauvegarde dans Telegram
+FLAGS = {"GB": "🇬🇧", "FR": "🇫🇷", "DE": "🇩🇪", "ES": "🇪🇸", "IT": "🇮🇹", "NL": "🇳🇱", "AT": "🇦🇹"}
+
+
+def country_of(source):
+    s = source.lower()
+    return "GB" if "hotukdeals" in s else "FR" if "dealabs" in s else "DE" if "mydealz" in s else None
 
 DEFAULT_FEEDS = [
     # Flux réservés aux LEGO : leurs 30 annonces = les 30 derniers deals LEGO (plusieurs jours),
@@ -174,6 +181,7 @@ def evaluate(item, watchlist, today=None):
             "set": num, "name": s["name"], "theme": s["theme"], "price": price, "cur": cur, "rrp": rrp,
             "discount": discount, "days": days, "retire": s["retire"],
             "title": item["title"], "link": item["link"], "merchant": item.get("merchant"),
+            "country": item.get("country"),
             "seuil": s["min_discount"],
         }
     return None
@@ -239,7 +247,8 @@ def format_alert(a):
             else:
                 lines.append(f"📊 Valeur marché actuelle (scellé, Brickfact) : <b>€{mv:.0f}</b>")
     meta = " · ".join(x for x in [
-        f"🏪 {esc(a['merchant'])}" if a.get("merchant") else "",
+        ("🏪 " + (esc(a["merchant"]) if a.get("merchant") else "Magasin non précisé")
+         + (f" {FLAGS.get(a['country'], a['country'])}" if a.get("country") else "")),
         f"⭐ {esc(a['theme'])}" if a.get("theme") else "",
     ] if x)
     if meta:
@@ -464,7 +473,8 @@ def brickfact_offer_items(watchlist, st):
                 "title": f"LEGO {num} {sym}{price:.2f} @ {best.get('retailer')}{ship_txt}",
                 "link": (data.get("comparison_url") or "").split("?")[0],
                 "price_attr": None,
-                "merchant": f"{best.get('retailer')} ({market}, via Brickfact)",
+                "merchant": f"{best.get('retailer')} (via Brickfact)",
+                "country": market,
             })
     err = None
     if errors and not items:
@@ -510,6 +520,300 @@ def track_health(st, name, ok, detail, dry_run):
         h["warned"] = True
 
 
+# ---------- Commandes Telegram : /achat, /stock, /deals ----------
+# Lues à chaque passage (toutes les 15 min) via getUpdates.
+# Seuls les messages venant de TELEGRAM_CHAT_ID sont pris en compte.
+SELL_TARGET = float(os.getenv("SELL_TARGET", "50"))   # alerte « moment de vendre » à +50 %
+HELP = ("🧱 <b>Commandes</b>\n"
+        "/achat 75415 48.99 : enregistre un achat (options : x2, £, nom du magasin)\n"
+        "/stock : ton stock, sa valeur et ta plus-value (bouton ✅ Vendu)\n"
+        "/deals : meilleures affaires des 7 derniers jours\n"
+        "/deals fnac : seulement ce magasin (leclerc, amazon, argos…)\n"
+        "<i>Réponse au prochain passage du bot (15 min max).</i>")
+
+
+def remember_deal(st, a):
+    st.setdefault("recent", []).append({
+        "ts": datetime.utcnow().isoformat(timespec="minutes"), "set": a["set"], "name": a["name"],
+        "price": a["price"], "cur": a["cur"], "rrp": a["rrp"], "discount": round(a["discount"]),
+        "score": quality(a)[2], "merchant": a.get("merchant") or "", "country": a.get("country") or "",
+        "link": a["link"], "title": a["title"]})
+    cutoff = (datetime.utcnow().timestamp() - 7 * 86400)
+    st["recent"] = [d for d in st["recent"]
+                    if datetime.fromisoformat(d["ts"]).timestamp() >= cutoff][-300:]
+
+
+def load_stock_defaults():
+    return {"offset": 0, "items": [], "sold": [], "pending_sale": None, "next_id": 1,
+            "menu_set": False, "last_sell_check": ""}
+
+
+def load_stock():
+    data = load_stock_defaults()
+    if STOCK_FILE.exists():
+        data.update(json.loads(STOCK_FILE.read_text(encoding="utf-8")))
+    return data
+
+
+def save_stock(stock):
+    STOCK_FILE.write_text(json.dumps(stock, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def backup_stock():
+    """Envoie stock.json en silence dans Telegram. Pour restaurer : renvoie ce fichier au bot."""
+    token, chat = os.environ["TELEGRAM_TOKEN"], os.environ["TELEGRAM_CHAT_ID"]
+    boundary = "----legobot" + str(int(datetime.utcnow().timestamp()))
+    parts = []
+    for k, v in {"chat_id": chat, "disable_notification": "true",
+                 "caption": "💾 Sauvegarde de ton stock (renvoie ce fichier au bot pour le restaurer)"}.items():
+        parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode())
+    parts.append((f'--{boundary}\r\nContent-Disposition: form-data; name="document"; filename="stock.json"\r\n'
+                  'Content-Type: application/json\r\n\r\n').encode() + STOCK_FILE.read_bytes() + b"\r\n")
+    parts.append(f"--{boundary}--\r\n".encode())
+    req = urllib.request.Request(f"https://api.telegram.org/bot{token}/sendDocument", data=b"".join(parts),
+                                 headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+    urllib.request.urlopen(req, timeout=30).read()
+
+
+def restore_stock(file_id, stock):
+    """Recharge un stock.json envoyé au bot (en gardant la position de lecture des messages)."""
+    token = os.environ["TELEGRAM_TOKEN"]
+    path = tg("getFile", file_id=file_id)["result"]["file_path"]
+    data = json.loads(fetch(f"https://api.telegram.org/file/bot{token}/{path}"))
+    if not isinstance(data, dict) or "items" not in data:
+        raise ValueError("ce fichier n'est pas une sauvegarde de stock")
+    offset = stock["offset"]
+    stock.clear()
+    stock.update(load_stock_defaults())
+    stock.update(data)
+    stock["offset"] = offset
+
+
+_fx = {}
+
+
+def eur_to_gbp():
+    """Taux BCE du jour (frankfurter.app). None si indisponible : on n'invente pas de taux."""
+    if "r" not in _fx:
+        try:
+            _fx["r"] = float(json.loads(fetch("https://api.frankfurter.app/latest?from=EUR&to=GBP"))["rates"]["GBP"])
+        except Exception as e:
+            print(f"[!] taux de change : {e}", file=sys.stderr)
+            _fx["r"] = None
+    return _fx["r"]
+
+
+def value_in(cur, num):
+    """Valeur de marché d'un set dans la devise d'achat, ou None."""
+    mv = market_value(num)
+    if mv is None:
+        return None
+    if cur == "EUR":
+        return mv
+    r = eur_to_gbp()
+    return mv * r if r else None
+
+
+def parse_achat(args):
+    """'/achat 75415 48.99 x2 fnac' -> dict ou message d'erreur."""
+    num, price, cur, qty, shop = None, None, "EUR", 1, []
+    for tok in args:
+        t = tok.strip()
+        if num is None and re.fullmatch(r"\d{4,6}(-1)?", t):
+            num = t.split("-")[0]
+        elif price is None and re.fullmatch(r"[£€]?\d+(?:[.,]\d{1,2})?[£€]?", t):
+            if "£" in t:
+                cur = "GBP"
+            price = to_float(t.strip("£€"))
+        elif re.fullmatch(r"[xX]\d{1,3}", t):
+            qty = int(t[1:])
+        elif t.lower() in ("£", "gbp"):
+            cur = "GBP"
+        elif t.lower() in ("€", "eur"):
+            cur = "EUR"
+        else:
+            shop.append(t)
+    if not num or price is None:
+        return "Format : /achat 75415 48.99 (options : x2, £, magasin)"
+    return {"set": num, "price": price, "cur": cur, "qty": qty, "shop": " ".join(shop)}
+
+
+def sym(cur):
+    return "£" if cur == "GBP" else "€"
+
+
+def stock_message(stock, watchlist):
+    if not stock["items"]:
+        return "📦 Ton stock est vide. Ajoute un achat avec /achat 75415 48.99", None
+    lines, buttons, tot = ["📦 <b>Ton stock</b>"], [], {}
+    for it in stock["items"]:
+        name = watchlist.get(it["set"], {}).get("name", "")
+        cost = it["price"] * it["qty"]
+        v = value_in(it["cur"], it["set"])
+        s = sym(it["cur"])
+        row = f"\n<b>{it['set']}</b> {esc(name)} · x{it['qty']} à {s}{it['price']:.2f}"
+        if it.get("shop"):
+            row += f" ({esc(it['shop'])})"
+        if v:
+            gain = (v - it["price"]) * it["qty"]
+            row += f"\n   Valeur marché ~{s}{v:.0f}/boîte → <b>{gain:+.0f} {s}</b> ({(v / it['price'] - 1) * 100:+.0f} %)"
+            t = tot.setdefault(it["cur"], [0, 0])
+            t[0] += cost
+            t[1] += v * it["qty"]
+        else:
+            row += "\n   Valeur marché indisponible"
+        lines.append(row)
+        buttons.append([{"text": f"✅ Vendu : {it['set']} (x{it['qty']})", "callback_data": f"sold:{it['id']}"}])
+    for cur, (c, v) in tot.items():
+        lines.append(f"\n💰 Total {sym(cur)} : payé {sym(cur)}{c:.0f}, vaut ~{sym(cur)}{v:.0f} ({v - c:+.0f})")
+    if stock["sold"]:
+        realised = {}
+        for x in stock["sold"]:
+            realised[x["cur"]] = realised.get(x["cur"], 0) + (x["sale"] - x["price"]) * x["qty"]
+        lines.append("🏁 Déjà réalisé : " + ", ".join(f"{v:+.0f} {sym(c)}" for c, v in realised.items()))
+    lines.append("\n<i>Valeur marché : set scellé, Brickfact. Indicatif.</i>")
+    return "\n".join(lines), {"inline_keyboard": buttons}
+
+
+def deals_message(st, shop=None):
+    recent = st.get("recent", [])
+    if shop:
+        recent = [d for d in recent if shop.lower() in (d["merchant"] + " " + d["title"]).lower()]
+    if not recent:
+        return (f"Aucun deal {'chez ' + esc(shop) + ' ' if shop else ''}sur les 7 derniers jours "
+                "qui passe tes règles.")
+    best = {}
+    for d in recent:                       # le meilleur prix par set
+        k = (d["set"], d["cur"])
+        if k not in best or d["price"] < best[k]["price"]:
+            best[k] = d
+    top = sorted(best.values(), key=lambda d: -d["score"])[:10]
+    lines = [f"🔥 <b>Meilleurs deals{' · ' + esc(shop) if shop else ''}</b> (7 derniers jours)"]
+    for d in top:
+        dot = "🟢" if d["score"] >= 75 else "🟡" if d["score"] >= 62 else "🟠"
+        flag = FLAGS.get(d["country"], "")
+        lines.append(f"{dot} {d['score']} · <b>-{d['discount']} %</b> · {d['set']} {esc(d['name'])}\n"
+                     f"   {sym(d['cur'])}{d['price']:.2f} · {esc(d['merchant'] or '?')} {flag} · "
+                     f"<a href=\"{html.escape(d['link'], quote=True)}\">voir</a> · {d['ts'][5:10].replace('-', '/')}")
+    lines.append("<i>Le prix a pu changer depuis : vérifie avant d'acheter.</i>")
+    return "\n".join(lines)
+
+
+def tg_send(text, markup=None, reply_markup_force=False):
+    params = {"chat_id": os.environ["TELEGRAM_CHAT_ID"], "text": text, "parse_mode": "HTML",
+              "disable_web_page_preview": "true"}
+    if markup:
+        params["reply_markup"] = json.dumps(markup)
+    if reply_markup_force:
+        params["reply_markup"] = json.dumps({"force_reply": True, "input_field_placeholder": "Prix de vente"})
+    return tg("sendMessage", **params)
+
+
+def process_commands(st, watchlist):
+    """Lit les nouveaux messages Telegram et y répond. Renvoie True si le stock a changé."""
+    stock = load_stock()
+    changed = False
+    before = json.dumps([stock["items"], stock["sold"]], sort_keys=True)
+    chat = str(os.environ["TELEGRAM_CHAT_ID"])
+    if not stock.get("menu_set"):
+        try:
+            tg("setMyCommands", commands=json.dumps([
+                {"command": "achat", "description": "Enregistrer un achat : /achat 75415 48.99"},
+                {"command": "stock", "description": "Mon stock, sa valeur, bouton Vendu"},
+                {"command": "deals", "description": "Meilleurs deals (option : magasin)"}]))
+            stock["menu_set"], changed = True, True
+        except Exception as e:
+            print(f"[!] menu Telegram : {e}", file=sys.stderr)
+    updates = tg("getUpdates", offset=stock["offset"], timeout=0).get("result", [])
+    for u in updates:
+        stock["offset"] = u["update_id"] + 1
+        changed = True
+        cb = u.get("callback_query")
+        msg = u.get("message") or {}
+        from_chat = str((cb or {}).get("message", {}).get("chat", {}).get("id") or msg.get("chat", {}).get("id"))
+        if from_chat != chat:
+            continue                      # quelqu'un d'autre écrit au bot : ignoré
+        try:
+            if cb:
+                try:
+                    tg("answerCallbackQuery", callback_query_id=cb["id"])
+                except Exception:
+                    pass                  # trop tard pour ce bouton, pas grave
+                if cb.get("data", "").startswith("sold:"):
+                    iid = int(cb["data"].split(":")[1])
+                    it = next((x for x in stock["items"] if x["id"] == iid), None)
+                    if it:
+                        stock["pending_sale"] = iid
+                        tg_send(f"Prix de vente par boîte pour {it['set']} (x{it['qty']}) ?\n"
+                                f"Réponds juste le prix, par ex. 85 (devise : {sym(it['cur'])}).",
+                                reply_markup_force=True)
+                continue
+            doc = msg.get("document")
+            if doc and doc.get("file_name", "").endswith(".json"):
+                text = "le fichier"
+                restore_stock(doc["file_id"], stock)
+                tg_send(f"♻️ Stock restauré : {len(stock['items'])} set(s) en stock, {len(stock['sold'])} vente(s).")
+                continue
+            text = (msg.get("text") or "").strip()
+            if not text:
+                continue
+            if stock.get("pending_sale") and re.fullmatch(r"[£€]?\d+(?:[.,]\d{1,2})?[£€]?", text):
+                it = next((x for x in stock["items"] if x["id"] == stock["pending_sale"]), None)
+                stock["pending_sale"] = None
+                if it:
+                    sale = to_float(text.strip("£€"))
+                    stock["items"].remove(it)
+                    stock["sold"].append({**it, "sale": sale, "date": date.today().isoformat()})
+                    gain = (sale - it["price"]) * it["qty"]
+                    tg_send(f"🏁 Vente enregistrée : {it['set']} x{it['qty']} à {sym(it['cur'])}{sale:.2f}\n"
+                            f"Plus-value brute : <b>{gain:+.2f} {sym(it['cur'])}</b> "
+                            f"({(sale / it['price'] - 1) * 100:+.0f} %)")
+                continue
+            parts = text.split()
+            cmd = parts[0].split("@")[0].lower()
+            if cmd == "/achat":
+                r = parse_achat(parts[1:])
+                if isinstance(r, str):
+                    tg_send(r)
+                    continue
+                r["id"], r["date"] = stock["next_id"], date.today().isoformat()
+                stock["next_id"] += 1
+                stock["items"].append(r)
+                name = watchlist.get(r["set"], {}).get("name", "")
+                tg_send(f"✅ Achat enregistré : {r['set']} {esc(name)} x{r['qty']} à {sym(r['cur'])}{r['price']:.2f}"
+                        + (f" ({esc(r['shop'])})" if r["shop"] else "")
+                        + f"\nJe te préviens quand il prend +{SELL_TARGET:.0f} %. /stock pour voir le tout.")
+            elif cmd == "/stock":
+                text_, markup = stock_message(stock, watchlist)
+                tg_send(text_, markup)
+            elif cmd == "/deals":
+                tg_send(deals_message(st, " ".join(parts[1:]) or None))
+            else:
+                tg_send(HELP)
+        except Exception as e:
+            print(f"[!] commande : {e}", file=sys.stderr)
+            tg_send(f"⚠️ Je n'ai pas pu traiter « {esc(text if not cb else 'le bouton')[:60]} » : {esc(e)[:120]}")
+    # Une fois par jour : alerte « moment de vendre »
+    today = date.today().isoformat()
+    if stock["items"] and stock.get("last_sell_check") != today and datetime.utcnow().hour >= 8:
+        stock["last_sell_check"], changed = today, True
+        for it in stock["items"]:
+            v = value_in(it["cur"], it["set"])
+            if v and (v / it["price"] - 1) * 100 >= SELL_TARGET and not it.get("sell_alerted"):
+                it["sell_alerted"] = True
+                tg_send(f"📈 <b>Moment de vendre ?</b> {it['set']} vaut maintenant ~{sym(it['cur'])}{v:.0f} "
+                        f"(acheté {sym(it['cur'])}{it['price']:.2f}, {(v / it['price'] - 1) * 100:+.0f} %).\n"
+                        "Vérifie les ventes réelles avant de mettre en vente.")
+    if changed:
+        save_stock(stock)
+        if json.dumps([stock["items"], stock["sold"]], sort_keys=True) != before:
+            try:
+                backup_stock()
+            except Exception as e:
+                print(f"[!] sauvegarde Telegram : {e}", file=sys.stderr)
+    return changed
+
+
 # ---------- Programme principal ----------
 
 def collect(feed_files=None, watchlist=None, st=None):
@@ -540,6 +844,11 @@ def run(dry_run=False, feed_files=None, status=False):
     st = load_state()
     seen, sent_deals = set(st["ids"]), set(st["deals"])
     sent, report = 0, []
+    if not feed_files and not dry_run and os.getenv("TELEGRAM_TOKEN"):
+        try:
+            process_commands(st, watchlist)
+        except Exception as e:
+            print(f"[!] commandes Telegram : {e}", file=sys.stderr)
     for name, items, err in collect(feed_files, watchlist, st):
         ok = err is None
         report.append(f"{'✅' if ok else '❌'} {name.replace('https://', '')} : "
@@ -549,6 +858,7 @@ def run(dry_run=False, feed_files=None, status=False):
         if not feed_files:
             track_health(st, name, ok, err or "", dry_run)
         for item in items:
+            item.setdefault("country", country_of(name))
             if item["id"] in seen:
                 continue
             seen.add(item["id"])
@@ -562,6 +872,7 @@ def run(dry_run=False, feed_files=None, status=False):
                 continue
             sent_deals.add(key)
             st["deals"].append(key)
+            remember_deal(st, alert)
             msg, link = format_alert(alert)
             print(msg, "\n")
             if not dry_run:

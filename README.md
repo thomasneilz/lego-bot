@@ -114,3 +114,12 @@ GitHub saute souvent les passages planifiés. cron-job.org appelle donc le bot t
 - En-têtes : `Authorization: Bearer <ta clé GitHub>`, `Accept: application/vnd.github+json`, `X-GitHub-Api-Version: 2022-11-28`
 - Corps : `{"ref":"main"}`
 La planification GitHub reste active en secours ; un même deal n'est jamais envoyé deux fois.
+
+## Commandes Telegram
+Le bot lit tes messages à chaque passage (réponse en 15 minutes maximum). Seuls tes messages sont pris en compte : si quelqu'un d'autre écrit au bot, il est ignoré.
+- `/achat 75415 48.99` : enregistre un achat. Options dans n'importe quel ordre : `x2` (quantité), `£` (sinon euros), le nom du magasin. Exemple : `/achat 75399 £35.99 x2 amazon`.
+- `/stock` : ton stock, le prix payé, la valeur de marché actuelle (Brickfact, convertie en £ au taux BCE du jour si besoin) et ta plus-value. Sous chaque set, un bouton **✅ Vendu** : le bot te demande le prix de vente et enregistre la plus-value réalisée.
+- `/deals` : les meilleures affaires des 7 derniers jours qui passent tes règles. `/deals fnac` (ou leclerc, amazon, argos…) : seulement ce magasin. Chaque ligne indique le pays (🇬🇧 🇫🇷 🇩🇪).
+- Une fois par jour, si un set de ton stock a pris +50 % (réglage `SELL_TARGET`), tu reçois « 📈 Moment de vendre ? ».
+
+Ton stock n'est pas enregistré dans le dépôt (qui est public) mais dans le cache privé de GitHub Actions. À chaque changement, le bot t'envoie aussi en silence un fichier `stock.json` dans Telegram : pour restaurer ton stock, renvoie simplement ce fichier au bot.
